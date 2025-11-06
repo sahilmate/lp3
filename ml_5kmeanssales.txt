@@ -1,114 +1,92 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-
+import datetime as dt
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
-from sklearn.decomposition import PCA
-df = pd.read_csv("sales_data_sample.csv", encoding='latin1')
+import seaborn as sns
+# Load dataset
+df = pd.read_csv('sales_data_sample.csv', encoding='unicode_escape')
 df.head()
-
-df.shape
 df.info()
-#Check for missing values
-print("\nMissing values:\n", df.isnull().sum())
-# Numeric features selected for clustering
-numeric_cols = ['QUANTITYORDERED', 'PRICEEACH', 'SALES']
+# Drop unnecessary columns
+to_drop = ['ADDRESSLINE1', 'ADDRESSLINE2', 'STATE', 'POSTALCODE', 'PHONE']
+df = df.drop(to_drop, axis=1)
+#Check for null values
+df.isnull().sum()
+df.dtypes
+# Select numeric columns only
+df_numeric = df.select_dtypes(include=['int64', 'float64'])
 
-# Drop rows with missing values in these columns
-X = df[numeric_cols].dropna()
-# Scale features
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-print("Shape of scaled data:", X_scaled.shape)
-# Ensure df_numeric is defined from the selected numeric columns, then fill missing values with median
-if 'df_numeric' not in globals():
-	df_numeric = df[numeric_cols].copy()
-
-# Fill missing values with median
-df_numeric = df_numeric.fillna(df_numeric.median())
-# Scale features
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(df_numeric)
-X_scaled.shape
-# Correlation heatmap
-plt.figure(figsize=(6,5))
-sns.heatmap(pd.DataFrame(X_scaled, columns=numeric_cols).corr(), annot=True, cmap='coolwarm')
-plt.title("Correlation Heatmap of Numeric Features")
+# Visualize outliers
+plt.figure(figsize=(12, 6))
+sns.boxplot(data=df_numeric)
+plt.title("Outlier Detection using Boxplots (Numeric Columns Only)")
 plt.show()
 
-# Scatter plot example: SALES vs PRICEEACH
-plt.figure(figsize=(6,4))
-sns.scatterplot(x=X['PRICEEACH'], y=X['SALES'])
-plt.title("SALES vs PRICEEACH")
-plt.show()
-# Elbow Method
+# Identify outliers using IQR
+Q1 = df_numeric.quantile(0.25)
+Q3 = df_numeric.quantile(0.75)
+IQR = Q3 - Q1
+
+# Count outliers per column
+outliers = ((df_numeric < (Q1 - 1.5 * IQR)) | (df_numeric > (Q3 + 1.5 * IQR))).sum()
+print("\nNumber of Outliers per Numeric Feature:\n", outliers)
+
+# Cap outliers using IQR (create df_capped)
+# Values below (Q1 - 1.5*IQR) will be set to that lower bound,
+# values above (Q3 + 1.5*IQR) will be set to that upper bound.
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+df_capped = df_numeric.clip(lower=lower_bound, upper=upper_bound, axis=1)
+
+# normalization data
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_capped)
+print(" Data normalized using StandardScaler.")
+df_normalized = pd.DataFrame(X_scaled, columns=df_capped.columns)
+
+print("\nSample of Normalized Data:")
+display(df_normalized.head())
+
+print("\nMean of each feature after normalization:\n", df_normalized.mean())
+print("\nStandard deviation of each feature after normalization:\n", df_normalized.std())
 inertia = []
-k_range = range(1, 11)
+K = range(1, 11)
 
-for k in k_range:
+for k in K:
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
     kmeans.fit(X_scaled)
     inertia.append(kmeans.inertia_)
 
-# Plot Elbow Method
-plt.figure(figsize=(6,4))
-plt.plot(k_range, inertia, 'bo-')
-plt.xlabel("Number of clusters (k)")
+# Plot the Elbow curve
+plt.figure(figsize=(8, 5))
+plt.plot(K, inertia, marker='o')
+plt.title("Elbow Method to Determine Optimal K")
+plt.xlabel("Number of Clusters (K)")
 plt.ylabel("Inertia")
-plt.title("Elbow Method for Optimal k")
+plt.grid(True)
 plt.show()
-# Choose optimal k (k=4 from elbow plot)
-k_optimal = 4
-kmeans = KMeans(n_clusters=k_optimal, random_state=42, n_init=10)
-X['cluster'] = kmeans.fit_predict(X_scaled)
+from sklearn.metrics import silhouette_score
 
-# Reduce to 2D using PCA for visualization
-pca = PCA(n_components=2)
-X_pca = pca.fit_transform(X_scaled)
+for k in range (2, 11):
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(X_scaled)
+    sil_score = silhouette_score(X_scaled, labels)
+    print(f"K = {k} → Silhouette Score = {sil_score:.4f}")
+#Visualize Clusters for K = 3
+kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+labels = kmeans.fit_predict(X_scaled)
 
-plt.figure(figsize=(8,5))
-plt.scatter(X_pca[:,0], X_pca[:,1], c=X['cluster'], cmap='viridis', marker='o')
-plt.xlabel("PCA 1")
-plt.ylabel("PCA 2")
-plt.title(f"K-Means Clusters Visualization (k={k_optimal})")
+plt.figure(figsize=(8,6))
+sns.scatterplot(
+    x=df_capped['SALES'],
+    y=df_capped['MSRP'],
+    hue=labels,
+    palette='Set2'
+)
+plt.title("K-Means Clustering Visualization (K = 3)")
+plt.xlabel("Sales")
+plt.ylabel("MSRP")
+plt.legend(title='Cluster')
 plt.show()
-# Choose optimal k (k=3 from elbow plot)
-k_optimal = 3
-kmeans = KMeans(n_clusters=k_optimal, random_state=42, n_init=10)
-X['cluster'] = kmeans.fit_predict(X_scaled)
-
-# Reduce to 2D using PCA for visualization
-pca = PCA(n_components=2)
-X_pca = pca.fit_transform(X_scaled)
-
-plt.figure(figsize=(8,5))
-plt.scatter(X_pca[:,0], X_pca[:,1], c=X['cluster'], cmap='viridis', marker='o')
-plt.xlabel("PCA 1")
-plt.ylabel("PCA 2")
-plt.title(f"K-Means Clusters Visualization (k={k_optimal})")
-plt.show()
-# Compute linkage matrix
-Z = linkage(X_scaled, method='ward')
-
-# Plot dendrogram
-plt.figure(figsize=(10,6))
-dendrogram(Z, truncate_mode='level', p=5)
-plt.title("Hierarchical Clustering Dendrogram (truncated)")
-plt.xlabel("Samples")
-plt.ylabel("Distance")
-plt.show()
-
-# Form flat clusters (example: 4 clusters)
-clusters_h = fcluster(Z, t=4, criterion='maxclust')
-X['cluster_hier'] = clusters_h
-# Combine cluster labels with original numeric features
-X_summary = X.copy()
-X_summary[numeric_cols] = df[numeric_cols].loc[X.index]
-
-# Summary statistics per cluster
-cluster_stats = X_summary.groupby('cluster')[numeric_cols].mean()
-display(cluster_stats)
