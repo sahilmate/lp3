@@ -1,0 +1,110 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, precision_score, recall_score, f1_score
+df = pd.read_csv("emails.csv")
+df.head()
+df.info()
+print("Initial shape:", df.shape)
+# Drop rows with missing values
+df.dropna(inplace=True)
+print("After dropping missing values:", df.shape)
+X = df.iloc[:, 1:-1]  # word count features
+y = df.iloc[:, -1]    # labels: 'spam' or 'not spam'
+# Check class distribution
+sns.countplot(x=y)
+plt.title("Class Distribution: Not Spam vs Spam")
+plt.show()
+# Split data (stratify to preserve class ratio)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+# Standardize features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+# KNN for multiple k values, store results
+k_values = [3, 5, 7]
+knn_results = {}  # store metrics for each k
+
+for k in k_values:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(X_train_scaled, y_train)
+    y_pred_knn = knn.predict(X_test_scaled)
+    
+    # Store metrics
+    knn_results[k] = {
+        "accuracy": accuracy_score(y_test, y_pred_knn),
+        "precision": precision_score(y_test, y_pred_knn, pos_label=1),
+        "recall": recall_score(y_test, y_pred_knn, pos_label=1),
+        "f1_score": f1_score(y_test, y_pred_knn, pos_label=1),
+        "confusion_matrix": confusion_matrix(y_test, y_pred_knn)
+    }
+    
+    # Print metrics
+    print(f"\nKNN with k={k}")
+    print(f"Accuracy: {knn_results[k]['accuracy']:.3f}")
+    print(f"Precision: {knn_results[k]['precision']:.3f}")
+    print(f"Recall: {knn_results[k]['recall']:.3f}")
+    print(f"F1-score: {knn_results[k]['f1_score']:.3f}")
+    print(f"Confusion Matrix:\n{knn_results[k]['confusion_matrix']}")
+# Initialize SVM with default parameters
+svm_model = SVC()
+svm_model.fit(X_train_scaled, y_train)
+y_pred_svm = svm_model.predict(X_test_scaled)
+
+# Store metrics
+svm_metrics = {
+    "accuracy": accuracy_score(y_test, y_pred_svm),
+    "precision": precision_score(y_test, y_pred_svm, pos_label=1),
+    "recall": recall_score(y_test, y_pred_svm, pos_label=1),
+    "f1_score": f1_score(y_test, y_pred_svm, pos_label=1),
+    "confusion_matrix": confusion_matrix(y_test, y_pred_svm)
+}
+
+# Print metrics
+print("\nSVM (Default Settings)")
+print(f"Accuracy: {svm_metrics['accuracy']:.3f}")
+print(f"Precision: {svm_metrics['precision']:.3f}")
+print(f"Recall: {svm_metrics['recall']:.3f}")
+print(f"F1-score: {svm_metrics['f1_score']:.3f}")
+print(f"Confusion Matrix:\n{svm_metrics['confusion_matrix']}")
+# Compare metrics for KNN (k=3) and SVM
+best_k = 3
+metrics = ["Accuracy", "Precision", "Recall", "F1-score"]
+
+knn_scores = [
+    knn_results[best_k]["accuracy"],
+    knn_results[best_k]["precision"],
+    knn_results[best_k]["recall"],
+    knn_results[best_k]["f1_score"]
+]
+
+svm_scores = [
+    svm_metrics["accuracy"],
+    svm_metrics["precision"],
+    svm_metrics["recall"],
+    svm_metrics["f1_score"]
+]
+
+# Plot grouped bar chart
+x = np.arange(len(metrics))
+width = 0.35
+
+plt.figure(figsize=(8,5))
+plt.bar(x - width/2, knn_scores, width, label=f'KNN (k={best_k})', color='blue')
+plt.bar(x + width/2, svm_scores, width, label='SVM', color='green')
+
+plt.xticks(x, metrics)
+plt.ylim(0,1.05)
+plt.ylabel("Score")
+plt.title("KNN vs SVM: Classification Metrics")
+plt.legend()
+plt.show()
+    
