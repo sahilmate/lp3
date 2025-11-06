@@ -1,84 +1,90 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
+
+# Load dataset
 df = pd.read_csv("diabetes.csv")
-df.head()
-df.shape
-df.info()
-# Check for missing values
-df.isnull().sum()
-# Columns where zero is invalid and should be replaced
-zero_invalid_cols = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
-# Replace zeros with median values in these columns
+print("Initial shape:", df.shape)
+display(df.head())
+
+# Replace zeros with median for columns where zero is invalid
+zero_invalid_cols = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
 for col in zero_invalid_cols:
-    median_val = df[col].median()
-    df[col] = df[col].replace(0, median_val)
+    med = df[col].median()
+    df[col] = df[col].replace(0, med)  # avoid chained assignment
 
-# Split features and target
-X = df.drop('Outcome', axis=1)
-y = df['Outcome']
+# Optional: detect outliers with IQR and remove them (uncomment to use)
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+Q1 = df[numeric_cols].quantile(0.25)
+Q3 = df[numeric_cols].quantile(0.75)
+IQR = Q3 - Q1
+outlier_mask = ~((df[numeric_cols] < (Q1 - 1.5 * IQR)) | (df[numeric_cols] > (Q3 + 1.5 * IQR))).any(axis=1)
+# df = df[outlier_mask].reset_index(drop=True)
+print("After optional IQR filter shape (if enabled):", df.shape)
 
-# Train-test split (80-20)
-from sklearn.model_selection import train_test_split
+# Visualize boxplots (optional)
+plt.figure(figsize=(12, 6))
+sns.boxplot(data=df[numeric_cols], orient="h")
+plt.title("Numeric feature boxplots")
+plt.show()
+
+# Features and target
+X = df.drop("Outcome", axis=1)
+y = df["Outcome"]
+
+# Stratified train-test split to preserve class ratios
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
-# Feature scaling
-from sklearn.preprocessing import StandardScaler
+
+# Feature scaling (important for KNN)
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
-# Define parameters to experiment
+
+# Evaluate KNN for several k values
 k_values = [3, 5, 7]
-distance_metrics = ['euclidean', 'manhattan', 'minkowski', 'chebyshev']
-minkowski_p = 3  # for Minkowski distance
+results = []
 
-# Dictionary to store results
-knn_results = {}
+for k in k_values:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(X_train_scaled, y_train)
+    y_pred = knn.predict(X_test_scaled)
 
-for metric in distance_metrics:
-    for k in k_values:
-        if metric == 'minkowski':
-            knn = KNeighborsClassifier(n_neighbors=k, metric=metric, p=minkowski_p)
-        else:
-            knn = KNeighborsClassifier(n_neighbors=k, metric=metric)
-        
-        knn.fit(X_train_scaled, y_train)
-        y_pred = knn.predict(X_test_scaled)
-        
-        # Store metrics
-        knn_results[(metric, k)] = {
-            "accuracy": accuracy_score(y_test, y_pred),
-            "error_rate": 1 - accuracy_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred),
-            "recall": recall_score(y_test, y_pred),
-            "f1_score": f1_score(y_test, y_pred),
-            "confusion_matrix": confusion_matrix(y_test, y_pred)
-        }
-        
-        # Print metrics
-        print(f"\nKNN with k={k}, metric={metric}")
-        print(f"Accuracy: {knn_results[(metric, k)]['accuracy']:.3f}")
-        print(f"Error Rate: {knn_results[(metric, k)]['error_rate']:.3f}")
-        print(f"Precision: {knn_results[(metric, k)]['precision']:.3f}")
-        print(f"Recall: {knn_results[(metric, k)]['recall']:.3f}")
-        print(f"F1-score: {knn_results[(metric, k)]['f1_score']:.3f}")
-        print("Confusion Matrix:\n", knn_results[(metric, k)]['confusion_matrix'])
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, zero_division=0)
+    rec = recall_score(y_test, y_pred, zero_division=0)
+    f1 = f1_score(y_test, y_pred, zero_division=0)
+    err = 1 - acc
+    cm = confusion_matrix(y_test, y_pred)
 
-# Convert results to DataFrame for plotting
-results_df = pd.DataFrame(knn_results).T  # transpose so (metric, k) is index
-results_df[['accuracy', 'precision', 'recall', 'f1_score']].plot(
-    kind='bar', figsize=(14,6)
-)
-plt.title("KNN Performance Metrics for Different k and Distance Metrics")
-plt.xlabel("(Distance Metric, k)")
-plt.ylabel("Score")
-plt.ylim(0, 1)
-plt.legend(loc='lower right')
+    results.append((k, acc, err, prec, rec, f1, cm))
+
+    print(f"\nK = {k}")
+    print("Confusion Matrix:\n", cm)
+    print(f"Accuracy: {acc:.4f}, Error rate: {err:.4f}")
+    print(f"Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}")
+
+# Plot accuracy vs k
+ks = [r[0] for r in results]
+accs = [r[1] for r in results]
+
+plt.figure(figsize=(6, 4))
+plt.plot(ks, accs, marker="o")
+plt.title("KNN Accuracy vs K")
+plt.xlabel("K")
+plt.ylabel("Accuracy")
+plt.grid(True)
 plt.show()
